@@ -1,0 +1,139 @@
+package ml.training
+
+import org.apache.spark.broadcast.Broadcast
+import org.apache.spark.ml.evaluation.RegressionEvaluator
+import org.apache.spark.ml.recommendation.ALS
+
+import org.apache.spark.ml.tuning.{ParamGridBuilder, TrainValidationSplit, TrainValidationSplitModel}
+import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.{SQLContext, SaveMode}
+import org.apache.spark.{SparkConf, SparkContext}
+
+import scala.collection.Map
+
+/**
+ * Created by taos on 2017/7/4.
+ * /usr/hdp/2.5.0.0-1245/spark/bin/spark-submit --class com.horizon.pt.AlsEtl --master yarn-client  --num-executors 2 --driver-memory 2g --executor-memory 2g --executor-cores 2 /root/algorithm/practicaltraining_2.10-1.0.jar hdfs://192.168.88.104:8020/out/usrArtist/
+ */
+object AlsEtl {
+
+  //args(0) hdfs根目录
+//将csv，转换为parquet格式
+  case class RatingD(userId: Int, artistId: Int, rating: Double)
+
+  def main(args: Array[String]): Unit = {
+    val sc = new SparkContext(new SparkConf().setAppName("AlsEtl").setMaster("local[*]"))
+    sc.setLogLevel("ERROR")
+    val rawUserArtistData = sc.textFile("/Users/pengzijun/Desktop/als/src/resources/userArtist.csv")
+//    val rawArtistData = sc.textFile(args(0) + "artist_data.txt")
+//    val rawArtistAlias = sc.textFile(args(0) + "artist_alias.txt")
+   // preparation(rawUserArtistData, rawArtistData, rawArtistAlias)
+  //  val bArtistAlias = sc.broadcast(buildArtistAlias(rawArtistAlias))
+    val trainData = buildRatings(rawUserArtistData)
+    val sqlContext = new SQLContext(sc)
+    import sqlContext.implicits._
+    val resultDS = trainData.toDS()
+    val als = new ALS()
+      //      .setMaxIter(args(1).toInt)
+      //      .setRank(args(2).toInt)
+      .setUserCol("userId")
+      .setItemCol("artistId")
+      .setRatingCol("rating")
+
+    //val tvsModel = als.fit(resultDF)
+    val paramGrid = new ParamGridBuilder()
+      .addGrid(als.regParam, Array(0.1, 0.01))
+      .addGrid(als.rank, Array(10))
+      .addGrid(als.maxIter,Array(5, 10))
+      .build()
+
+    val evaluator = new RegressionEvaluator()
+      .setMetricName("rmse")
+      .setLabelCol("rating")
+      .setPredictionCol("prediction")
+
+    val trainValidationSplit = new TrainValidationSplit()
+      .setEstimator(als)
+      .setEvaluator(evaluator)
+      .setEstimatorParamMaps(paramGrid)
+      .setTrainRatio(0.8)
+
+    val tvsModel=trainValidationSplit.fit(resultDS);
+
+    val params =tvsModel.params
+    for (i <- params) {
+      println(i)
+    }
+
+    tvsModel.transform(resultDS)
+      .select("userId","artistId", "rating", "prediction")
+      .show()
+
+//    resultDF.write.format("parquet")
+//      .mode(SaveMode.Overwrite)
+//      .save(args(0) + "rattingData")
+  }
+//显示数的统计信息
+  def preparation(
+                   rawUserArtistData: RDD[String],
+                   rawArtistData: RDD[String],
+                   rawArtistAlias: RDD[String]) = {
+    val userIDStats = rawUserArtistData.map(_.split(' ')(0).toDouble).stats()
+    val itemIDStats = rawUserArtistData.map(_.split(' ')(1).toDouble).stats()
+    println(userIDStats)
+    println(itemIDStats)
+
+    val artistByID = buildArtistByID(rawArtistData)
+    val artistAlias = buildArtistAlias(rawArtistAlias)
+
+    val (badID, goodID) = artistAlias.head
+    println(artistByID.lookup(badID) + " -> " + artistByID.lookup(goodID))
+  }
+
+  def buildArtistByID(rawArtistData: RDD[String]) =
+    rawArtistData.flatMap { line =>
+      val (id, name) = line.span(_ != '\t')
+      if (name.isEmpty) {
+        None
+      } else {
+        try {
+          Some((id.toInt, name.trim))
+        } catch {
+          case e: NumberFormatException => None
+        }
+      }
+    }
+
+
+  def buildRatings(
+                    rawUserArtistData: RDD[String],
+                    bArtistAlias: Broadcast[Map[Int, Int]]) = {
+    rawUserArtistData.map { line =>
+      val Array(userID, artistID, count) = line.split(' ').map(_.toInt)
+      val finalArtistID = bArtistAlias.value.getOrElse(artistID, artistID)
+      RatingD(userID, finalArtistID, count)
+    }
+  }
+  def buildRatings(rawUserArtistData:RDD[String]):RDD[RatingD]={
+    rawUserArtistData.map{ line=>{
+        val array=line.split(",").map(_.toInt);
+        RatingD(array(0).toInt,array(1),array(2));
+      }
+    }
+
+
+  }
+
+
+  def buildArtistAlias(rawArtistAlias: RDD[String]): Map[Int, Int] =
+    rawArtistAlias.flatMap { line =>
+      val tokens = line.split('\t')
+      if (tokens(0).isEmpty) {
+        None
+      } else {
+        Some((tokens(0).toInt, tokens(1).toInt))
+      }
+    }.collectAsMap()
+
+
+}
