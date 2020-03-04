@@ -1,5 +1,5 @@
-package ml.training
 
+package  neu
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{Row, SQLContext, SaveMode}
 import org.apache.spark.{SparkConf, SparkContext}

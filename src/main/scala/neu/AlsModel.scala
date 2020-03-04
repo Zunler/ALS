@@ -1,4 +1,4 @@
-
+package  neu
 
 import org.apache.spark.ml.evaluation.RegressionEvaluator
 import org.apache.spark.ml.recommendation.{ALS, ALSModel}
