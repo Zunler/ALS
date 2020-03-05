@@ -24,7 +24,7 @@ object AlsEtl {
 
     val resultDF = trainData.toDF()
     //本地没有权限写，在集群上运行是可以写的
-   resultDF.write.parquet("hdfs://172.16.29.107:9000/user/root/zun/music/out/usrArtist/rattingData")
+   resultDF.write.mode("overwrite").parquet("hdfs://172.16.29.107:9000/user/root/zun/music/out/usrArtist/rattingData")
 
   }
   //将mysql已经处理好点的数据转换为RDD

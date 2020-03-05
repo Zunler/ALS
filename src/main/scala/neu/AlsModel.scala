@@ -21,9 +21,9 @@ object AlsModel {
 
 
     val als = new ALS()
-      .setUserCol("userId")
-      .setItemCol("artistId")
-      .setRatingCol("rating")
+      .setUserCol("USER_ID")
+      .setItemCol("ARTIST_ID")
+      .setRatingCol("COUNT")
 
     //参数网格
     val paramGrid = new ParamGridBuilder()
@@ -44,7 +44,7 @@ object AlsModel {
     //获取最优模型
     val alsModel = tvsModel.bestModel.asInstanceOf[ALSModel]
 
-    alsModel.write.overwrite().save("hdfs://172.16.29.107:9000/user/root/zun/music/out/usrArtist/model")
+    //  alsModel.write.overwrite().save("hdfs://172.16.29.107:9000/user/root/zun/music/out/usrArtist/model")
 
 
 
